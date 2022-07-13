@@ -1,0 +1,234 @@
+keycloak:
+  image:
+    # The Keycloak image repository
+    repository: superawesomeltd/freekws-keycloak
+    # Overrides the Keycloak image tag whose default is the chart version
+    tag: XXXXX
+
+  postgresql:
+    # If `true`, the Postgresql dependency is enabled
+    enabled: false
+
+  # Disabled autoscaling for now since it uses the `behavior` parameter which depends on k8s 1.18
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 3Gi
+    requests:
+      cpu: 500m
+      memory: 3Gi
+
+  extraEnv: |
+    - name: DB_VENDOR
+      value: postgres
+    - name: DB_ADDR
+      value: 
+    - name: DB_PORT
+      value: "5432"
+    - name: DB_DATABASE
+      value: sacloud
+    - name: DB_USER
+      value: sacloud
+    - name: DB_PASSWORD
+      value: WRxxxxxxxxxxxxxxxxxxxxxxxje
+    - name: KEYCLOAK_FRONTEND_URL
+      value: 
+    - name: JGROUPS_DISCOVERY_PROTOCOL
+      value: kubernetes.KUBE_PING
+    - name: KEYCLOAK_STATISTICS
+      value: http
+    - name: KEYCLOAK_LOGLEVEL
+      value: WARN
+    - name: ROOT_LOGLEVEL
+      value: WARN
+    - name: KUBERNETES_NAMESPACE
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.namespace
+    - name: CACHE_OWNERS_COUNT
+      value: "2"
+    - name: CACHE_OWNERS_AUTH_SESSIONS_COUNT
+      value: "2"
+    - name: JAVA_OPTS
+      value: "-Djboss.site.name=site1"
+    - name: INFINISPAN_USER
+      value: ""
+    - name: INFINISPAN_PASS
+      value: ""
+    - name: TRUSTSTORE_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: 
+          name: 
+    - name: POD_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+
+  extraVolumeMounts: |
+    - name: sa-keycloak-multireg-configuration
+      mountPath: /opt/jboss/keycloak/standalone/configuration/custom.xml
+      subPath: custom.xml
+    - name: sa-keycloak-multireg-generated-secret
+      mountPath: /etc/security
+
+  extraVolumes: |
+    - name: sa-keycloak-multireg-configuration
+      configMap:
+        name: sa-keycloak-multireg-configuration
+        defaultMode: 0666
+    - name: sa-keycloak-multireg-generated-secret
+      projected:
+        sources:
+          - secret:
+              name: sa-keycloak-multireg-generated-secret
+              items:
+                - key: truststore.jks
+                  path: truststore.jks
+                  mode: 0400
+
+  command:
+    - /bin/sh
+  args:
+    - -c
+    - > 
+      cp /opt/jboss/keycloak/standalone/configuration/custom.xml /opt/jboss/keycloak/standalone/configuration/standalone-ha.xml \
+       && /opt/jboss/tools/docker-entrypoint.sh -Djboss.node.name=${HOSTNAME} -Djboss.tx.node.id=${HOSTNAME} -b ${POD_IP}
+  
+  ingress:
+    # If `true`, an Ingress is created
+    enabled: false
+    # Ingress annotations
+    annotations:
+      alb.ingress.kubernetes.io/actions.ssl-redirect: '{"Type": "redirect", "RedirectConfig":{ "Protocol": "HTTPS", "Port": "443", "StatusCode": "HTTP_301"}}'
+      alb.ingress.kubernetes.io/group.name: sa
+      alb.ingress.kubernetes.io/healthcheck-path: /auth/
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80,"HTTPS":443}]'
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/security-groups: ingress
+      alb.ingress.kubernetes.io/target-type: ip
+      kubernetes.io/ingress.class: alb
+    # List of rules for the Ingress
+    rules:
+      - host: 'auth.staging.superawesome.tv'
+        # Paths for the host
+        paths:
+          - /*
+
+  podsPort: 8080 # not using port or httpPort cause its used elsewhere
+
+  podAnnotations:
+    ad.datadoghq.com/keycloak.check_names: '["openmetrics", "openmetrics"]'
+    ad.datadoghq.com/keycloak.init_configs: '[{}, {}]'
+    ad.datadoghq.com/keycloak.instances: |
+      [
+        {
+          "prometheus_url": "http://%%host%%:{{ .Values.podsPort }}/auth/realms/master/metrics",
+          "namespace": "keycloak",
+          "metrics": [
+            "keycloak_response_errors",
+            "keycloak_failed_login_attempts",
+            "keycloak_refresh_tokens_errors",
+            "keycloak_code_to_tokens_errors",
+            "keycloak_logins",
+            "keycloak_client_logins",
+            "keycloak_request_duration",
+            "keycloak_registrations",
+            "keycloak_registrations_errors",
+            "keycloak_user_event_CLIENT_LOGIN",
+            "keycloak_user_event_UPDATE_PASSWORD",
+            "keycloak_user_event_RESET_PASSWORD",
+            "keycloak_user_event_SEND_RESET_PASSWORD",
+            "keycloak_user_event_CLIENT_INFO_ERROR",
+            "keycloak_user_event_CLIENT_LOGIN_ERROR",
+            "keycloak_user_event_USER_INFO_REQUEST_ERROR",
+            "keycloak_user_event_INVALID_SIGNATURE_ERROR",
+            "keycloak_user_event_UPDATE_PASSWORD_ERROR",
+            "keycloak_user_event_REFRESH_TOKEN_ERROR",
+            "keycloak_user_event_SEND_RESET_PASSWORD_ERROR",
+            "keycloak_user_event_REGISTER_ERROR",
+            "keycloak_user_event_RESET_PASSWORD_ERROR",
+            "keycloak_user_event_VERIFY_EMAIL_ERROR",
+            "keycloak_user_event_SEND_VERIFY_EMAIL_ERROR",
+            "keycloak_user_event_EXECUTE_ACTION_TOKEN_ERROR"
+          ]
+        },
+        {
+          "prometheus_url": "http://%%host%%:9990/metrics",
+          "namespace": "keycloak",
+          "metrics": [
+            "*"
+          ]
+        }
+      ]
+
+oauth2-proxy:
+  enabled: true
+  legacy: false
+
+  image:
+    repository: "bitnami/oauth2-proxy"
+    tag: "6.1.1"
+    pullPolicy: "IfNotPresent"
+
+  # Oauth client configuration specifics
+  config:
+    clientID: xxxxxxxxxxxxxxx.apps.googleusercontent.com
+    clientSecret: xxxxxxxxxxxxxx
+    cookieSecret: xxxxxxxxxxxxxx
+    configFile: |
+      email_domains = [ "superawesome.com" ]
+      upstreams = [ "http://sa-keycloak-11-http" ]
+      pass_basic_auth = false
+      skip_auth_regex = "/token|/roles|/clients|/users|/link|/auth/resources|/auth/realms/(cloud|kws|test)"
+
+  ingress:
+    enabled: true
+    annotations:
+      alb.ingress.kubernetes.io/group.name: sa
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/security-groups: ingress
+      alb.ingress.kubernetes.io/target-type: ip
+      kubernetes.io/ingress.class: alb
+    hosts:
+      - auth.staging.superawesome.tv
+    path: /*
+  service:
+    externalPort: 80
+    type: ClusterIP
+    port: 8080
+  serviceAccount:
+    enabled: false
+
+infinispan:
+  keystore: test
+  truststore: test
+  usersproperties: test
+  groupsproperties: test
+  env:
+    remotenode: test
+    site1: test
+    site2: test
+  deploy:
+    replicas: 3
+    makeDataDirWritable: true
+    nameOverride: sa-keycloak-multireg-infinispan
+    container:
+      extraJvmOpts: -Djgroups.ignore.bind_addr=true
+    security:
+      secretName: sa-keycloak-multireg-infinispan-generated-secret
+  images:
+    # server: superawesomeltd/freekws-infinispan-keycloak:2bb0c2aaa7864b5f35cc4912fc70fd14342a1385
+    # The infinispan image repository
+    repository: superawesomeltd/freekws-infinispan-keycloak
+    # Overrides the infinispan image tag whose default is the chart version
+    tag: xxxxxx
+
+  

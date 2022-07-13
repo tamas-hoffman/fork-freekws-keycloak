@@ -1,0 +1,203 @@
+version: 2
+
+jobs:
+  download_tools:
+    machine:
+      docker_layer_caching: true
+    steps:
+      - checkout
+      - run:
+          name: Generate & store Github Token
+          command: |
+            curl -L https://github.com/SuperAwesomeLTD/gha-token-generator/releases/download/v1.0.3/gha-token-generator_1.0.3_Linux_x86_64.tar.gz | tar xz
+            GENERATED_APP_TOKEN=$( ./gha-token-generator -app-id ${SA_GITHUB_CIRCLECI_DOWNLOAD_TOOLS_APP_ID} -org-name SuperAwesomeLTD -pem-key ${SA_GITHUB_CIRCLECI_DOWNLOAD_TOOLS_APP_PEM} )
+            echo "export GITHUB_TOKEN=${GENERATED_APP_TOKEN}" >> $BASH_ENV
+      - run:
+          name: Pull sa-continuous-integration
+          command: git clone https://x-access-token:${GITHUB_TOKEN}@github.com/SuperAwesomeLTD/sa-continuous-integration.git
+      - run:
+          name: Pull sa-kubernetes-templates
+          command: git clone https://x-access-token:${GITHUB_TOKEN}@github.com/SuperAwesomeLTD/sa-kubernetes-templates.git
+      - persist_to_workspace:
+          root: "."
+          paths:
+            - "*"
+
+  build_docker:
+    machine:
+      docker_layer_caching: true
+    environment:
+      DOCKER_IMAGE_NAME: freekws-keycloak
+    steps:
+    - attach_workspace:
+        at: .
+    - run:
+        name: Docker Auth
+        command: sa-continuous-integration/circleci/docker-auth.sh
+    - run:
+        name: Build Prod Image
+        command: sa-continuous-integration/circleci/docker-build.sh
+    - run:
+        name: Push Prod Docker Image
+        command: sa-continuous-integration/circleci/docker-push.sh
+
+  build_docker_infinispan:
+    machine:
+      docker_layer_caching: true
+    environment:
+      DOCKERFILE: infinispan/Dockerfile
+      DOCKER_IMAGE_NAME: freekws-infinispan-keycloak
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Docker Auth
+          command: sa-continuous-integration/circleci/docker-auth.sh
+      - run:
+          name: Build Prod Image
+          command: sa-continuous-integration/circleci/docker-build.sh
+      - run:
+          name: Push Prod Docker Image
+          command: sa-continuous-integration/circleci/docker-push.sh
+
+  build_helm:
+    machine: true
+    steps:
+    - attach_workspace:
+        at: .
+    - run: sa-kubernetes-templates/circleci.sh build
+    - persist_to_workspace:
+        root: "."
+        paths:
+        - ci.yaml
+
+  staging-eu-west:
+    machine: true
+    environment:
+      CHART: superawesome/sa-keycloak-multiregion
+      VARIABLE_KEY: keycloak.image.tag,infinispan.images.tag
+      RELEASE: sa-keycloak-multiregion
+      CLUSTER_NAME: 0.eu-west-1.v2.kws.k8s.staging.superawesome.tv
+      AWS_ACCOUNT: KWS_V2_STAGING
+    steps:
+    - attach_workspace:
+        at: .
+    - run: sa-kubernetes-templates/circleci.sh deploy
+
+  staging-us-east:
+    machine: true
+    environment:
+      CHART: superawesome/sa-keycloak-multiregion
+      VARIABLE_KEY: keycloak.image.tag,infinispan.images.tag
+      RELEASE: sa-keycloak-multiregion
+      CLUSTER_NAME: 0.us-east-1.v2.kws.k8s.staging.superawesome.tv
+      AWS_ACCOUNT: KWS_V2_STAGING
+    steps:
+    - attach_workspace:
+        at: .
+    - run: sa-kubernetes-templates/circleci.sh deploy
+
+  production-us-east:
+    machine: true
+    environment:
+      CHART: superawesome/sa-keycloak-multiregion
+      VARIABLE_KEY: keycloak.image.tag,infinispan.images.tag
+      RELEASE: sa-keycloak-multiregion
+      CLUSTER_NAME: 0.us-east-1.v2.kws.k8s.superawesome.tv
+      AWS_ACCOUNT: KWS_V2_PRODUCTION
+    steps:
+    - attach_workspace:
+        at: .
+    - run: sa-kubernetes-templates/circleci.sh deploy
+
+  production-eu-west:
+    machine: true
+    environment:
+      CHART: superawesome/sa-keycloak-multiregion
+      VARIABLE_KEY: keycloak.image.tag,infinispan.images.tag
+      RELEASE: sa-keycloak-multiregion
+      CLUSTER_NAME: 0.eu-west-1.v2.kws.k8s.superawesome.tv
+      AWS_ACCOUNT: KWS_V2_PRODUCTION
+    steps:
+    - attach_workspace:
+        at: .
+    - run: sa-kubernetes-templates/circleci.sh deploy
+
+  datadog:
+    machine: true
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Docker Auth
+          command: sh sa-continuous-integration/circleci/docker-auth.sh
+      - run:
+          name: Run datadog monitor deploy
+          command: sa-continuous-integration/datadog/datadog.sh
+
+workflows:
+  version: 2
+  workflow:
+    jobs:
+    - download_tools:
+        context: Build
+    - build_helm:
+       context: Build
+       requires:
+       - download_tools
+       filters:
+         branches:
+           only: 
+            - main
+    - build_docker:
+       context: Build
+       requires:
+       - download_tools
+    - build_docker_infinispan:
+        context: Build
+        requires:
+          - download_tools
+    - staging-us-east:
+       context: Build
+       requires:
+       - build_docker
+       - build_docker_infinispan
+       - build_helm
+       filters:
+         branches:
+           only: main
+    - staging-eu-west:
+        context: Build
+        requires:
+          - build_docker
+          - build_helm
+          - staging-us-east
+        filters:
+          branches:
+            only: main
+    - approve_production_multiregion:
+       type: approval
+       requires:
+       - staging-us-east
+       - staging-eu-west
+       filters:
+         branches:
+           only: main
+    - production-eu-west:
+       context: Build
+       requires:
+       - approve_production_multiregion
+    - production-us-east:
+        context: Build
+        requires:
+          - approve_production_multiregion
+          - production-eu-west
+    - datadog:
+       context: Build
+       requires:
+         - build_docker
+         - build_helm
+       filters:
+         branches:
+           only:
+           - main

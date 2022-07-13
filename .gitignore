@@ -1,0 +1,5 @@
+DRAFT/
+/helm/Chart.lock
+/helm/charts/*.tgz
+.idea
+.DS_Store

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sa-keycloak-multireg-configuration
+data:
+  custom.xml: |-
+    {{- .Files.Get "conf/keycloak-standalone-ha.xml" | nindent 4 }}

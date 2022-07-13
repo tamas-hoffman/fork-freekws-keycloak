@@ -1,0 +1,72 @@
+{
+  "realm": "cloud",
+  "users": [
+    {
+      "id": "e38f21b0-9f15-4932-bc6c-fef9b7f80dda",
+      "createdTimestamp": 1521455282443,
+      "username": "service-account-account-api",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": false,
+      "email": "service-account-account-api@placeholder.org",
+      "serviceAccountClientId": "account-api",
+      "credentials": [],
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["uma_authorization", "offline_access", "SuperAwesome API"],
+      "clientRoles": {
+        "realm-management": [
+          "manage-authorization",
+          "query-groups",
+          "manage-users",
+          "query-users"
+        ],
+        "account": ["manage-account", "view-profile"]
+      },
+      "notBefore": 0,
+      "groups": []
+    },
+    {
+      "id": "90fb48f0-f747-4a35-9f91-1721716354a0",
+      "createdTimestamp": 1521455147119,
+      "username": "service-account-dev",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": false,
+      "email": "service-account-dev@placeholder.org",
+      "serviceAccountClientId": "dev",
+      "credentials": [],
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": [
+        "uma_authorization",
+        "SuperAwesome Admin",
+        "offline_access"
+      ],
+      "clientRoles": {
+        "account": ["manage-account", "view-profile"]
+      },
+      "notBefore": 0,
+      "groups": []
+    },
+    {
+      "id": "3805e0f4-cb8f-495f-bcbb-0d7614782376",
+      "createdTimestamp": 1521717063708,
+      "username": "service-account-sa-ad-api",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": false,
+      "email": "service-account-sa-ad-api@placeholder.org",
+      "serviceAccountClientId": "sa-ad-api",
+      "credentials": [],
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": ["uma_authorization", "SuperAwesome API", "offline_access"],
+      "clientRoles": {
+        "account": ["manage-account", "view-profile"]
+      },
+      "notBefore": 0,
+      "groups": []
+    }
+  ]
+}
